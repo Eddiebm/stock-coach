@@ -19,12 +19,29 @@ function nDaysOut(n) {
 // ─── stock universe ───────────────────────────────────────────────────────────
 
 const STOCKS = [
-  { sym: "SPY",   name: "S&P 500 ETF" },
-  { sym: "QQQ",   name: "Nasdaq 100 ETF" },
-  { sym: "IWM",   name: "Russell 2000 ETF" },
-  { sym: "GLD",   name: "Gold ETF" },
-  { sym: "XLE",   name: "Energy ETF" },
-  { sym: "XLF",   name: "Financials ETF" },
+  // Broad market ETFs
+  { sym: "SPY",  name: "S&P 500 ETF" },
+  { sym: "QQQ",  name: "Nasdaq 100 ETF" },
+  { sym: "IWM",  name: "Russell 2000 ETF" },
+  { sym: "GLD",  name: "Gold ETF" },
+  { sym: "EEM",  name: "Emerging Markets ETF" },
+  { sym: "EFA",  name: "Developed Markets ETF" },
+  { sym: "EWJ",  name: "Japan ETF" },
+
+  // All 11 sector ETFs
+  { sym: "XLK",  name: "Tech ETF" },
+  { sym: "XLF",  name: "Financials ETF" },
+  { sym: "XLE",  name: "Energy ETF" },
+  { sym: "XLV",  name: "Healthcare ETF" },
+  { sym: "XLI",  name: "Industrials ETF" },
+  { sym: "XLY",  name: "Consumer Discretionary ETF" },
+  { sym: "XLP",  name: "Consumer Staples ETF" },
+  { sym: "XLB",  name: "Materials ETF" },
+  { sym: "XLU",  name: "Utilities ETF" },
+  { sym: "XLRE", name: "Real Estate ETF" },
+  { sym: "XLC",  name: "Communications ETF" },
+
+  // Tech
   { sym: "AAPL",  name: "Apple" },
   { sym: "MSFT",  name: "Microsoft" },
   { sym: "NVDA",  name: "NVIDIA" },
@@ -37,29 +54,63 @@ const STOCKS = [
   { sym: "AMD",   name: "AMD" },
   { sym: "PLTR",  name: "Palantir" },
   { sym: "COIN",  name: "Coinbase" },
+  { sym: "INTC",  name: "Intel" },
+  { sym: "QCOM",  name: "Qualcomm" },
+  { sym: "AVGO",  name: "Broadcom" },
+
+  // Consumer
   { sym: "UBER",  name: "Uber" },
   { sym: "PYPL",  name: "PayPal" },
-  { sym: "JPM",   name: "JPMorgan Chase" },
-  { sym: "BAC",   name: "Bank of America" },
-  { sym: "GS",    name: "Goldman Sachs" },
+  { sym: "SNAP",  name: "Snap" },
+  { sym: "DIS",   name: "Disney" },
   { sym: "KO",    name: "Coca-Cola" },
   { sym: "MCD",   name: "McDonald's" },
   { sym: "WMT",   name: "Walmart" },
   { sym: "HD",    name: "Home Depot" },
   { sym: "NKE",   name: "Nike" },
-  { sym: "XOM",   name: "ExxonMobil" },
-  { sym: "CVX",   name: "Chevron" },
+  { sym: "TGT",   name: "Target" },
+  { sym: "LOW",   name: "Lowe's" },
+  { sym: "SBUX",  name: "Starbucks" },
+  { sym: "DG",    name: "Dollar General" },
+  { sym: "COST",  name: "Costco" },
+  { sym: "PG",    name: "Procter & Gamble" },
+
+  // Finance
+  { sym: "JPM",   name: "JPMorgan Chase" },
+  { sym: "BAC",   name: "Bank of America" },
+  { sym: "GS",    name: "Goldman Sachs" },
+  { sym: "WFC",   name: "Wells Fargo" },
+  { sym: "V",     name: "Visa" },
+  { sym: "MA",    name: "Mastercard" },
+  { sym: "USB",   name: "U.S. Bancorp" },
+
+  // Healthcare
   { sym: "JNJ",   name: "Johnson & Johnson" },
   { sym: "UNH",   name: "UnitedHealth" },
   { sym: "PFE",   name: "Pfizer" },
   { sym: "MRNA",  name: "Moderna" },
+  { sym: "LLY",   name: "Eli Lilly" },
+  { sym: "ABBV",  name: "AbbVie" },
+  { sym: "MRK",   name: "Merck" },
+  { sym: "TMO",   name: "Thermo Fisher" },
+
+  // Energy & materials
+  { sym: "XOM",   name: "ExxonMobil" },
+  { sym: "CVX",   name: "Chevron" },
+  { sym: "SLB",   name: "SLB" },
+  { sym: "FCX",   name: "Freeport-McMoRan" },
+
+  // Industrials
+  { sym: "GE",    name: "GE Aerospace" },
+  { sym: "CAT",   name: "Caterpillar" },
+  { sym: "DE",    name: "Deere & Co." },
+  { sym: "BA",    name: "Boeing" },
+  { sym: "RTX",   name: "RTX Corp" },
+
+  // Other
   { sym: "F",     name: "Ford" },
   { sym: "SOFI",  name: "SoFi" },
-  { sym: "INTC",  name: "Intel" },
-  { sym: "SNAP",  name: "Snap" },
-  { sym: "DIS",   name: "Disney" },
-  { sym: "V",     name: "Visa" },
-  { sym: "MA",    name: "Mastercard" },
+  { sym: "T",     name: "AT&T" },
 ];
 
 // ─── styles ───────────────────────────────────────────────────────────────────
