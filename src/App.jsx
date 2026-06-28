@@ -914,7 +914,7 @@ function BacktestView({ capital }) {
   const [status,    setStatus]    = useState("idle"); // idle | loading | running | done | error
   const [progress,  setProgress]  = useState("");
   const [bars,      setBars]      = useState(null);
-  const [threshold, setThreshold] = useState(60);
+  const [threshold, setThreshold] = useState(80);
   const [useGates,  setUseGates]  = useState(true);
   const [result,    setResult]    = useState(null);   // { trades, equity, stats, stressResults }
   const [withoutG,  setWithoutG]  = useState(null);   // gates-off run for comparison
