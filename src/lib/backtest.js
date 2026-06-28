@@ -17,6 +17,9 @@ function buildSignals(bars) {
     s200 += b.c; if (i >= 200) s200 -= bars[i - 200].c;
     sv20 += b.v; if (i >= 20)  sv20 -= bars[i - 20].v;
 
+    // 10-day return for relative strength calc
+    const return10 = i >= 10 ? (b.c - bars[i - 10].c) / bars[i - 10].c : null;
+
     out[i] = {
       sma20:    i >= 19  ? s20  / 20  : null,
       sma50:    i >= 49  ? s50  / 50  : null,
@@ -24,6 +27,7 @@ function buildSignals(bars) {
       volRatio: i >= 19  ? b.v / (sv20 / 20) : null,
       rsi:      i >= 15  ? rsi14(bars, i) : null,
       atr:      i >= 15  ? atr14(bars, i) : null,
+      return10,
     };
   }
   return out;
@@ -49,36 +53,59 @@ function atr14(bars, end) {
   return sum / 14;
 }
 
-function scoreAt(sig, price, capital) {
-  if (!sig.sma20 || !sig.sma50 || !sig.sma200 || !sig.rsi || !sig.atr || !sig.volRatio) return 0;
+// New scoring — must stay in sync with src/lib/score.js
+// 1. Long-term trend     20 pts  (SMA50 + SMA200)
+// 2. Pullback to SMA20   25 pts  (distance from dynamic support = entry quality)
+// 3. Relative strength   20 pts  (10-day return vs SPY)
+// 4. RSI momentum        20 pts  (tightened to 45-60)
+// 5. Volume              10 pts
+// 6. Affordability        5 pts
+function scoreAt(sig, price, capital, spySig) {
+  if (!sig.sma50 || !sig.sma200 || !sig.rsi || !sig.atr) return 0;
 
   let s = 0;
 
-  // Trend (30 pts)
-  if (price > sig.sma20)  s += 10;
-  if (price > sig.sma50)  s += 10;
+  // 1. Long-term trend (20 pts)
   if (price > sig.sma200) s += 10;
+  if (price > sig.sma50)  s += 10;
 
-  // RSI momentum (25 pts)
-  const r = sig.rsi;
-  if (r >= 45 && r <= 65)      s += 25;
-  else if (r > 65 && r <= 75)  s += 12;
-  else if (r >= 40 && r < 45)  s += 8;
+  // 2. Pullback quality — how close to SMA20 (25 pts)
+  if (sig.sma20 && price > sig.sma20) {
+    const ext = (price - sig.sma20) / sig.sma20;
+    if      (ext <= 0.03) s += 25;
+    else if (ext <= 0.07) s += 15;
+    else if (ext <= 0.12) s += 5;
+    // > 12% above SMA20: 0 pts — chasing
+  }
 
-  // Volume (15 pts)
-  if (sig.volRatio >= 1.5)       s += 15;
-  else if (sig.volRatio >= 1.1)  s += 8;
+  // 3. Relative strength vs SPY (20 pts)
+  if (sig.return10 != null && spySig?.return10 != null) {
+    const rs = sig.return10 - spySig.return10;
+    if      (rs >= 0.02) s += 20;
+    else if (rs >= 0)    s += 12;
+  }
 
-  // R/R always valid at 2:1 (20 pts)
-  s += 20;
+  // 4. RSI momentum (20 pts)
+  if (sig.rsi != null) {
+    const r = sig.rsi;
+    if      (r >= 45 && r <= 60)  s += 20;
+    else if (r >= 40 && r <  45)  s += 10;
+    else if (r >  60 && r <= 70)  s += 10;
+  }
 
-  // Position sizing check (10 pts)
+  // 5. Volume (10 pts)
+  if (sig.volRatio != null) {
+    if      (sig.volRatio >= 1.5) s += 10;
+    else if (sig.volRatio >= 1.1) s += 5;
+  }
+
+  // 6. Affordability (5 pts)
   const riskAmt  = capital * 0.01;
   const shares   = Math.floor(riskAmt / sig.atr);
   const posValue = shares * price;
-  if (shares >= 1 && posValue <= capital * 0.30) s += 10;
+  if (shares >= 1 && posValue <= capital * 0.30) s += 5;
 
-  return s;
+  return Math.min(100, s);
 }
 
 // ─── Main simulation ──────────────────────────────────────────────────────────
@@ -165,7 +192,7 @@ export function runBacktest({ bars, capital = 100000, threshold = 60, useGates =
 
         const bar = bars[sym][symI];
         const sig = signals[sym][symI];
-        const sc  = scoreAt(sig, bar.c, cash);
+        const sc  = scoreAt(sig, bar.c, cash, spySig);
         if (sc < threshold) continue;
 
         const shares = Math.floor((cash * 0.01) / sig.atr);

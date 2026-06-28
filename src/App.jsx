@@ -231,6 +231,7 @@ export default function App() {
         sym, name, bars: data.bars, capital,
         hasEarnings: earningsEntry?.hasEarnings ?? null,
         earningsDate: earningsEntry?.date ?? null,
+        spyBars: spyData?.bars ?? [],
       });
     }));
 
@@ -578,8 +579,9 @@ function CalculatorView({ capital, onLog }) {
     setErr(null);
     setResult(null);
 
-    const [barsData, earningsData] = await Promise.all([
+    const [barsData, spyData, earningsData] = await Promise.all([
       fetch(`/api/bars?symbol=${s}&limit=250`).then(r => r.json()).catch(() => null),
+      fetch(`/api/bars?symbol=SPY&limit=250`).then(r => r.json()).catch(() => null),
       fetch(`/api/earnings?symbol=${s}&expiration=${nDaysOut(30)}`).then(r => r.json()).catch(() => null),
     ]);
 
@@ -593,6 +595,7 @@ function CalculatorView({ capital, onLog }) {
       sym: s, name: s, bars: barsData.bars, capital,
       hasEarnings: earningsData?.hasEarnings ?? null,
       earningsDate: earningsData?.date ?? null,
+      spyBars: spyData?.bars ?? [],
     });
 
     if (!res) { setErr("Not enough history to analyze this stock."); setLoading(false); return; }
