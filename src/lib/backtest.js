@@ -72,31 +72,32 @@ function scoreAt(sig, price, capital, spySig) {
   // 2. Pullback quality — how close to SMA20 (25 pts)
   if (sig.sma20 && price > sig.sma20) {
     const ext = (price - sig.sma20) / sig.sma20;
-    if      (ext <= 0.03) s += 25;
-    else if (ext <= 0.07) s += 15;
-    else if (ext <= 0.12) s += 5;
-    // > 12% above SMA20: 0 pts — chasing
+    if      (ext <= 0.02) s += 25; // ≤2% — tight to support
+    else if (ext <= 0.05) s += 15; // 2–5%
+    else if (ext <= 0.10) s += 5;  // 5–10%
+    // >10%: 0 pts
   }
 
-  // 3. Relative strength vs SPY (20 pts)
+  // 3. Relative strength vs SPY (20 pts) — must clearly lead
   if (sig.return10 != null && spySig?.return10 != null) {
     const rs = sig.return10 - spySig.return10;
     if      (rs >= 0.02) s += 20;
-    else if (rs >= 0)    s += 12;
+    else if (rs >= 0.01) s += 10;
+    else if (rs >= 0)    s += 5;
   }
 
   // 4. RSI momentum (20 pts)
   if (sig.rsi != null) {
     const r = sig.rsi;
-    if      (r >= 45 && r <= 60)  s += 20;
-    else if (r >= 40 && r <  45)  s += 10;
-    else if (r >  60 && r <= 70)  s += 10;
+    if      (r >= 47 && r <= 58)  s += 20;
+    else if (r >= 43 && r <  47)  s += 10;
+    else if (r >  58 && r <= 65)  s += 10;
   }
 
-  // 5. Volume (10 pts)
+  // 5. Volume (10 pts) — floor raised to 1.2x
   if (sig.volRatio != null) {
     if      (sig.volRatio >= 1.5) s += 10;
-    else if (sig.volRatio >= 1.1) s += 5;
+    else if (sig.volRatio >= 1.2) s += 5;
   }
 
   // 6. Affordability (5 pts)
@@ -172,12 +173,18 @@ export function runBacktest({ bars, capital = 100000, threshold = 60, useGates =
       }
     }
 
-    // ── 2. Morning gate: skip deep bear days ─────────────────────────────────
-    if (useGates && spySig?.sma200 && spyBars[spyI].c < spySig.sma200 * 0.97) {
-      equity.push({ date, value: cash });
-      peak  = Math.max(peak, cash);
-      maxDD = Math.max(maxDD, (peak - cash) / peak);
-      continue;
+    // ── 2. Morning gates: bear market + short-term selling pressure ──────────
+    if (useGates) {
+      // Bear market gate: SPY 3%+ below its 200-day MA
+      const bearMarket = spySig?.sma200 && spyBars[spyI].c < spySig.sma200 * 0.97;
+      // Momentum gate: SPY dropped >3% over last 10 days (choppy declining market)
+      const sellingPressure = spySig?.return10 != null && spySig.return10 < -0.03;
+      if (bearMarket || sellingPressure) {
+        equity.push({ date, value: cash });
+        peak  = Math.max(peak, cash);
+        maxDD = Math.max(maxDD, (peak - cash) / peak);
+        continue;
+      }
     }
 
     // ── 3. Scan for new entries ───────────────────────────────────────────────

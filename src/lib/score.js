@@ -59,32 +59,33 @@ export function analyzeStock({ sym, name, bars, capital, hasEarnings, earningsDa
   if (price > (sma200 ?? 0)) score += 10;
   if (price > (sma50  ?? 0)) score += 10;
 
-  // 2. Pullback quality (25 pts) — tighter to SMA20 = better entry
+  // 2. Pullback quality (25 pts) — tighter window = closer to stop = better R/R
   if (pullbackPct !== null) {
-    if      (pullbackPct <= 0.03) score += 25; // ≤3% above SMA20 — at support
-    else if (pullbackPct <= 0.07) score += 15; // 3–7% — reasonable
-    else if (pullbackPct <= 0.12) score += 5;  // 7–12% — extended
-    // >12%: 0 pts — chasing
+    if      (pullbackPct <= 0.02) score += 25; // ≤2% above SMA20 — tight to support
+    else if (pullbackPct <= 0.05) score += 15; // 2–5% — reasonable
+    else if (pullbackPct <= 0.10) score += 5;  // 5–10% — extended
+    // >10%: 0 pts — chasing
   }
 
-  // 3. Relative strength vs SPY (20 pts)
+  // 3. Relative strength vs SPY (20 pts) — must clearly lead the market
   if (relStrength !== null) {
     if      (relStrength >= 0.02) score += 20; // outperforming by 2%+
-    else if (relStrength >= 0)    score += 12; // slightly outperforming
+    else if (relStrength >= 0.01) score += 10; // outperforming by 1–2%
+    else if (relStrength >= 0)    score += 5;  // barely keeping pace — marginal
     // underperforming: 0 pts
   }
 
-  // 4. RSI momentum (20 pts) — tightened sweet spot
+  // 4. RSI momentum (20 pts) — tighter sweet spot
   if (rsiVal != null) {
-    if      (rsiVal >= 45 && rsiVal <= 60)   score += 20; // ideal: not extended
-    else if (rsiVal >= 40 && rsiVal <  45)   score += 10;
-    else if (rsiVal >  60 && rsiVal <= 70)   score += 10;
+    if      (rsiVal >= 47 && rsiVal <= 58)   score += 20; // ideal: healthy, not extended
+    else if (rsiVal >= 43 && rsiVal <  47)   score += 10;
+    else if (rsiVal >  58 && rsiVal <= 65)   score += 10;
   }
 
-  // 5. Volume (10 pts)
+  // 5. Volume (10 pts) — raise floor to 1.2x
   if (volRat != null) {
     if      (volRat >= 1.5) score += 10;
-    else if (volRat >= 1.1) score += 5;
+    else if (volRat >= 1.2) score += 5;
   }
 
   // 6. Affordability (5 pts)
