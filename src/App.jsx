@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { analyzeStock, scoreGrade, stockChecks, marketCondition as computeMarketCondition } from "./lib/score.js";
+import { runBacktest, computeStats, stressStats, STRESS_PERIODS } from "./lib/backtest.js";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -220,7 +221,7 @@ export default function App() {
             </div>
           </div>
           <nav style={S.tabs}>
-            {[["today","Today's Picks"], ["calculator","Calculator"], ["journal","Journal" + (openTrades.length ? ` (${openTrades.length})` : "")], ["review","Review"]].map(([id, label]) => (
+            {[["today","Today's Picks"], ["calculator","Calculator"], ["journal","Journal" + (openTrades.length ? ` (${openTrades.length})` : "")], ["review","Review"], ["backtest","📊 Backtest"]].map(([id, label]) => (
               <button key={id} style={S.tab(tab === id)} onClick={() => setTab(id)}>{label}</button>
             ))}
           </nav>
@@ -271,6 +272,7 @@ export default function App() {
             capital={capital}
           />
         )}
+        {tab === "backtest" && <BacktestView capital={capital} />}
       </main>
 
       <AiAssistant context={aiCtx} />
@@ -849,5 +851,354 @@ function AiAssistant({ context }) {
         </div>
       )}
     </>
+  );
+}
+
+// ─── BacktestView ─────────────────────────────────────────────────────────────
+
+function BacktestView({ capital }) {
+  const [status,    setStatus]    = useState("idle"); // idle | loading | running | done | error
+  const [progress,  setProgress]  = useState("");
+  const [bars,      setBars]      = useState(null);
+  const [threshold, setThreshold] = useState(60);
+  const [useGates,  setUseGates]  = useState(true);
+  const [result,    setResult]    = useState(null);   // { trades, equity, stats, stressResults }
+  const [withoutG,  setWithoutG]  = useState(null);   // gates-off run for comparison
+
+  async function load() {
+    setStatus("loading");
+    setProgress("Fetching 4 years of market data…");
+    setResult(null);
+    try {
+      const r = await fetch("/api/backtest");
+      if (!r.ok) throw new Error("API error");
+      const d = await r.json();
+      setBars(d.bars);
+      setStatus("ready");
+      setProgress("");
+    } catch (e) {
+      setStatus("error");
+      setProgress("Could not load data. Check ALPACA_KEY_ID / ALPACA_SECRET_KEY.");
+    }
+  }
+
+  function simulate(barsData) {
+    setStatus("running");
+    setProgress("Simulating trades…");
+    setTimeout(() => {
+      try {
+        const r1 = runBacktest({ bars: barsData, capital, threshold, useGates: true,  maxPositions: 1 });
+        const r2 = runBacktest({ bars: barsData, capital, threshold, useGates: false, maxPositions: 1 });
+        const s1 = computeStats(r1.trades, r1.equity, capital);
+        const s2 = computeStats(r2.trades, r2.equity, capital);
+        const stressResults = STRESS_PERIODS.map(p => stressStats(r1.trades, p));
+        setResult({ ...r1, stats: s1, stressResults });
+        setWithoutG({ ...r2, stats: s2 });
+        setStatus("done");
+        setProgress("");
+      } catch (e) {
+        setStatus("error");
+        setProgress("Simulation error: " + e.message);
+      }
+    }, 50); // yield to browser so loading state renders first
+  }
+
+  const $ = (n, d = 0) => n == null ? "—" : (n >= 0 ? "+" : "") + n.toLocaleString("en-US", { maximumFractionDigits: d });
+  const pct = n => n == null ? "—" : (n * 100).toFixed(1) + "%";
+
+  return (
+    <div style={{ maxWidth: 780, margin: "0 auto", padding: "24px 16px 60px" }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>Strategy Backtest</div>
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 24 }}>
+        4 years of real market data. Every signal the app uses, tested against what actually happened.
+      </div>
+
+      {/* Controls */}
+      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 24 }}>
+        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>SCORE THRESHOLD</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[50, 60, 70, 80].map(t => (
+                <button key={t} type="button" onClick={() => setThreshold(t)} style={{
+                  padding: "6px 14px", borderRadius: 6, border: "1px solid #e2e8f0",
+                  background: threshold === t ? "#0f172a" : "#fff",
+                  color: threshold === t ? "#fff" : "#334155",
+                  fontWeight: 700, fontSize: 13, cursor: "pointer",
+                }}>{t}+</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>MORNING GATES</div>
+            <button type="button" onClick={() => setUseGates(g => !g)} style={{
+              padding: "6px 14px", borderRadius: 6, border: "1px solid #e2e8f0",
+              background: useGates ? "#0f172a" : "#fff",
+              color: useGates ? "#fff" : "#334155",
+              fontWeight: 700, fontSize: 13, cursor: "pointer",
+            }}>{useGates ? "✅ ON" : "⬜ OFF"}</button>
+          </div>
+          <div style={{ marginLeft: "auto" }}>
+            {status === "idle" && (
+              <button type="button" onClick={load} style={btnPrimary}>Load Data</button>
+            )}
+            {status === "ready" && (
+              <button type="button" onClick={() => simulate(bars)} style={btnPrimary}>▶ Run Backtest</button>
+            )}
+            {(status === "loading" || status === "running") && (
+              <button type="button" disabled style={{ ...btnPrimary, opacity: 0.5 }}>…</button>
+            )}
+            {status === "done" && (
+              <button type="button" onClick={() => simulate(bars)} style={{ ...btnPrimary, background: "#334155" }}>↻ Re-run</button>
+            )}
+          </div>
+        </div>
+        {progress && (
+          <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>{progress}</div>
+        )}
+        {status === "error" && (
+          <div style={{ marginTop: 12, fontSize: 13, color: "#dc2626" }}>{progress}</div>
+        )}
+      </div>
+
+      {result && result.stats && (
+        <>
+          {/* Summary stats */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
+            {[
+              { label: "Total Trades",   value: result.stats.total,                             note: null },
+              { label: "Win Rate",       value: pct(result.stats.winRate),                      note: `Without gates: ${pct(withoutG?.stats?.winRate)}` },
+              { label: "Avg Win",        value: "$" + result.stats.avgWin.toFixed(0),            note: null },
+              { label: "Avg Loss",       value: "$" + result.stats.avgLoss.toFixed(0),           note: null },
+              { label: "EV / Trade",     value: $(result.stats.ev, 0),                           note: result.stats.ev > 0 ? "Positive edge ✅" : "Negative edge ❌" },
+              { label: "Annual Return",  value: pct(result.stats.annualReturn),                  note: `Total P&L: ${$(result.stats.totalPnl, 0)}` },
+              { label: "Max Drawdown",   value: pct(result.maxDrawdown),                         note: "Worst losing streak" },
+              { label: "Final Capital",  value: "$" + result.finalCapital.toLocaleString("en-US", { maximumFractionDigits: 0 }), note: `Started at $${capital.toLocaleString()}` },
+              { label: "Gates Saved",    value: pct((withoutG?.stats?.winRate ?? 0) - result.stats.winRate), note: "Negative = gates help ✅" },
+            ].map(({ label, value, note }) => (
+              <div key={label} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: 1 }}>{label}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>{value}</div>
+                {note && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{note}</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* Equity curve */}
+          <EquityCurve equity={result.equity} initial={capital} stressPeriods={STRESS_PERIODS} />
+
+          {/* Score band breakdown */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", letterSpacing: 1, marginBottom: 10 }}>SCORE BANDS — does a higher score actually win more?</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                  {["Score", "Trades", "Wins", "Win Rate", "Total P&L", "Verdict"].map(h => (
+                    <th key={h} style={{ padding: "6px 12px", textAlign: h === "Score" ? "left" : "right", color: "#64748b", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.stats.byBand.map(b => (
+                  <tr key={b.label} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 700 }}>{b.label}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "#64748b" }}>{b.trades}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "#64748b" }}>{b.wins}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700,
+                      color: b.winRate >= 0.60 ? "#16a34a" : b.winRate >= 0.50 ? "#d97706" : "#dc2626" }}>
+                      {b.trades ? pct(b.winRate) : "—"}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right",
+                      color: b.pnl >= 0 ? "#16a34a" : "#dc2626" }}>
+                      {b.trades ? $(b.pnl, 0) : "—"}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                      {!b.trades ? "—"
+                        : b.winRate >= 0.60 ? "✅ Take it"
+                        : b.winRate >= 0.50 ? "⚠️ Marginal"
+                        : "❌ Skip"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Year by year */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", letterSpacing: 1, marginBottom: 10 }}>YEAR BY YEAR — how did each year perform?</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                  {["Year", "Trades", "Win Rate", "P&L", ""].map(h => (
+                    <th key={h} style={{ padding: "6px 12px", textAlign: h === "Year" ? "left" : "right", color: "#64748b", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.stats.byYear.map(y => (
+                  <tr key={y.year} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 700 }}>{y.year}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "#64748b" }}>{y.trades}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700,
+                      color: y.winRate >= 0.55 ? "#16a34a" : y.winRate >= 0.45 ? "#d97706" : "#dc2626" }}>
+                      {pct(y.winRate)}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700,
+                      color: y.pnl >= 0 ? "#16a34a" : "#dc2626" }}>
+                      {$(y.pnl, 0)}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                      {y.pnl >= 0 ? "✅" : "❌"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Stress tests */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", letterSpacing: 1, marginBottom: 10 }}>STRESS TESTS — what happened during the worst market periods?</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {result.stressResults.map(s => (
+                <div key={s.label} style={{
+                  background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10,
+                  padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a" }}>{s.label}</div>
+                    <div style={{ fontSize: 12, color: "#94a3b8" }}>{s.desc}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    {s.trades === 0 ? (
+                      <div style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>Gates kept you out ✅</div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: s.pnl >= 0 ? "#16a34a" : "#dc2626" }}>{$(s.pnl, 0)}</div>
+                        <div style={{ fontSize: 11, color: "#94a3b8" }}>{s.trades} trades · {pct(s.winRate)} win rate</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Last 20 trades */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", letterSpacing: 1, marginBottom: 10 }}>LAST 20 TRADES</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                  {["Symbol","Entry","Exit","Score","Shares","P&L","Outcome"].map(h => (
+                    <th key={h} style={{ padding: "6px 8px", textAlign: "left", color: "#64748b", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...result.trades].slice(-20).reverse().map((t, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "8px", fontWeight: 700 }}>{t.sym}</td>
+                    <td style={{ padding: "8px", color: "#64748b" }}>{t.entryDate}</td>
+                    <td style={{ padding: "8px", color: "#64748b" }}>{t.exitDate}</td>
+                    <td style={{ padding: "8px" }}>{t.score}</td>
+                    <td style={{ padding: "8px", color: "#64748b" }}>{t.shares}</td>
+                    <td style={{ padding: "8px", fontWeight: 700, color: t.pnl >= 0 ? "#16a34a" : "#dc2626" }}>
+                      {$(t.pnl, 0)}
+                    </td>
+                    <td style={{ padding: "8px" }}>
+                      {t.outcome === "win" ? "✅ Win" : t.outcome === "loss" ? "❌ Loss" : "⏱ Timeout"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const btnPrimary = {
+  background: "#0f172a", color: "#fff", border: "none", borderRadius: 8,
+  padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+};
+
+// ─── Equity Curve SVG ─────────────────────────────────────────────────────────
+
+function EquityCurve({ equity, initial, stressPeriods }) {
+  if (!equity?.length) return null;
+
+  const W = 740, H = 200, PAD = { t: 16, r: 16, b: 32, l: 64 };
+  const plotW = W - PAD.l - PAD.r;
+  const plotH = H - PAD.t - PAD.b;
+
+  const values = equity.map(e => e.value);
+  const minV   = Math.min(...values);
+  const maxV   = Math.max(...values);
+  const range  = maxV - minV || 1;
+
+  const xScale = i  => PAD.l + (i / (equity.length - 1)) * plotW;
+  const yScale = v  => PAD.t + plotH - ((v - minV) / range) * plotH;
+
+  const points = equity.map((e, i) => `${xScale(i)},${yScale(e.value)}`).join(" ");
+
+  const finalValue = values[values.length - 1];
+  const lineColor  = finalValue >= initial ? "#16a34a" : "#dc2626";
+
+  // Map stress period dates to x positions
+  const firstDate = equity[0].date;
+  const lastDate  = equity[equity.length - 1].date;
+  const dateToX   = (d) => {
+    const t  = (new Date(d) - new Date(firstDate)) / (new Date(lastDate) - new Date(firstDate));
+    return PAD.l + t * plotW;
+  };
+
+  // Y axis labels
+  const yLabels = [minV, (minV + maxV) / 2, maxV].map(v => ({
+    y: yScale(v),
+    label: "$" + (v / 1000).toFixed(0) + "k",
+  }));
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", letterSpacing: 1, marginBottom: 10 }}>
+        EQUITY CURVE — account value over time (red shading = stress periods)
+      </div>
+      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", display: "block" }}>
+          {/* Stress period shading */}
+          {stressPeriods.map(p => {
+            const x1 = Math.max(PAD.l, dateToX(p.start));
+            const x2 = Math.min(PAD.l + plotW, dateToX(p.end));
+            if (x2 <= x1) return null;
+            return (
+              <rect key={p.label} x={x1} y={PAD.t} width={x2 - x1} height={plotH}
+                fill="#fef2f2" opacity={0.7} />
+            );
+          })}
+
+          {/* Grid lines */}
+          {yLabels.map(({ y, label }) => (
+            <g key={label}>
+              <line x1={PAD.l} y1={y} x2={PAD.l + plotW} y2={y} stroke="#f1f5f9" strokeWidth={1} />
+              <text x={PAD.l - 6} y={y + 4} textAnchor="end" fontSize={10} fill="#94a3b8">{label}</text>
+            </g>
+          ))}
+
+          {/* Initial capital line */}
+          <line x1={PAD.l} y1={yScale(initial)} x2={PAD.l + plotW} y2={yScale(initial)}
+            stroke="#cbd5e1" strokeWidth={1} strokeDasharray="4,4" />
+
+          {/* Equity line */}
+          <polyline points={points} fill="none" stroke={lineColor} strokeWidth={2} />
+
+          {/* Final value dot */}
+          <circle cx={xScale(equity.length - 1)} cy={yScale(finalValue)} r={4} fill={lineColor} />
+        </svg>
+      </div>
+    </div>
   );
 }
